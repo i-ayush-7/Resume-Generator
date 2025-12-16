@@ -1,4 +1,4 @@
-# 📄 LinkedIn to AI Resume Generator
+# 📄 LinkedIn PDF to Resume Generator
 
 A Python-based tool designed to run on **Google Colab** that automates the creation of a professional resume. It extracts raw data from your LinkedIn profile PDF, processes it using Google's **Gemini 2.5 Flash** model to enhance content and formatting, and generates a polished, ready-to-use Resume PDF.
 

@@ -34,4 +34,7 @@ Before running the notebook, ensure you have the following:
 
 ---
 
-## 🏃‍♂️ Get the Code: [LINK]()
+## 🏃‍♂️ Get the Code: [LINK](https://github.com/i-ayush-7/Resume-Generator/blob/main/RESUME%20GENERATOR.txt)
+### (Paste your API key in Line 176)
+
+# Project by: Ayush Shukla

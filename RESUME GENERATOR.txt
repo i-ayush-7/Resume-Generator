@@ -1,0 +1,378 @@
+!pip install -q google-generativeai pypdf reportlab
+
+from pypdf import PdfReader
+
+def extract_text_from_pdf(pdf_path):
+    try:
+        reader = PdfReader(pdf_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        return text
+    except Exception as e:
+        print(f"Error reading PDF: {e}")
+        return None
+
+import json
+
+def generate_resume_content(linkedin_text):
+    prompt = f"""
+    You are an expert Resume Writer. I will provide you with text exported from a LinkedIn profile.
+    
+    Your goal is to extract the relevant information and restructure it into a professional resume format.
+    Improve the bullet points to be action-oriented and quantifiable where possible.
+    
+    Return the output strictly as a valid JSON object with the following structure:
+    {{
+        "name": "Full Name",
+        "contact": "Email | Phone | LinkedIn URL | Location",
+        "summary": "A brief 2-3 sentence professional summary.",
+        "skills": ["Skill 1", "Skill 2", "Skill 3", ...],
+        "experience": [
+            {{
+                "title": "Job Title",
+                "company": "Company Name",
+                "dates": "Date Range",
+                "bullets": ["Improved bullet point 1", "Improved bullet point 2"]
+            }}
+        ],
+        "education": [
+            {{
+                "degree": "Degree Name",
+                "school": "School Name",
+                "year": "Graduation Year"
+            }}
+        ]
+    }}
+
+    Here is the LinkedIn Profile Text:
+    {linkedin_text}
+    """
+
+    response = model.generate_content(prompt)
+    
+    # Cleaning the response to ensure it parses as JSON
+    try:
+        clean_response = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean_response)
+    except Exception as e:
+        print("Error parsing AI response:", e)
+        print("Raw Response:", response.text)
+        return None
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+def create_resume_pdf(data, output_filename="resume.pdf"):
+    c = canvas.Canvas(output_filename, pagesize=letter)
+    width, height = letter
+    y_position = height - 50  # Start from top
+
+    # Helper function to check space and add new page if needed
+    def check_space(current_y, needed_space):
+        if current_y < needed_space:
+            c.showPage()
+            return height - 50
+        return current_y
+
+    # 1. Header (Name & Contact)
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(50, y_position, data.get('name', 'Name'))
+    y_position -= 20
+    
+    c.setFont("Helvetica", 10)
+    c.setFillColor(colors.gray)
+    c.drawString(50, y_position, data.get('contact', 'Contact Info'))
+    c.setFillColor(colors.black)
+    y_position -= 30
+
+    # 2. Summary
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_position, "Professional Summary")
+    c.line(50, y_position - 5, width - 50, y_position - 5)
+    y_position -= 25
+    
+    c.setFont("Helvetica", 11)
+    # Simple text wrapping for summary (basic implementation)
+    summary_text = data.get('summary', '')
+    if len(summary_text) > 90:
+        c.drawString(50, y_position, summary_text[:90])
+        y_position -= 15
+        c.drawString(50, y_position, summary_text[90:])
+    else:
+        c.drawString(50, y_position, summary_text)
+    y_position -= 30
+
+    # 3. Skills
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_position, "Skills")
+    c.line(50, y_position - 5, width - 50, y_position - 5)
+    y_position -= 25
+    
+    c.setFont("Helvetica", 10)
+    skills = ", ".join(data.get('skills', []))
+    c.drawString(50, y_position, skills)
+    y_position -= 30
+
+    # 4. Experience
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_position, "Experience")
+    c.line(50, y_position - 5, width - 50, y_position - 5)
+    y_position -= 25
+
+    for job in data.get('experience', []):
+        y_position = check_space(y_position, 100)
+        
+        # Title and Date
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y_position, f"{job['title']} at {job['company']}")
+        c.setFont("Helvetica-Oblique", 10)
+        c.drawRightString(width - 50, y_position, job['dates'])
+        y_position -= 15
+        
+        # Bullets
+        c.setFont("Helvetica", 10)
+        for bullet in job['bullets']:
+            y_position = check_space(y_position, 20)
+            c.drawString(65, y_position, f"• {bullet}")
+            y_position -= 15
+        y_position -= 10
+
+    # 5. Education
+    y_position = check_space(y_position, 100)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_position, "Education")
+    c.line(50, y_position - 5, width - 50, y_position - 5)
+    y_position -= 25
+
+    for edu in data.get('education', []):
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y_position, edu['school'])
+        c.setFont("Helvetica", 10)
+        c.drawString(50, y_position - 15, f"{edu['degree']} - {edu['year']}")
+        y_position -= 30
+
+    c.save()
+    print(f"Resume saved as {output_filename}")
+
+import google.generativeai as genai
+import os
+import json
+from pypdf import PdfReader
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.lib.units import inch
+import textwrap
+import time
+from google.api_core import exceptions
+
+# --- CONFIGURATION ---
+# PASTE YOUR API KEY HERE
+os.environ["GOOGLE_API_KEY"] = "YOUR_API_KEY_HERE"
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
+# Using the model that worked for you. If it fails, try 'gemini-2.0-flash-lite'
+model = genai.GenerativeModel('gemini-2.5-flash') 
+
+# --- 1. EXTRACT TEXT FROM PDF ---
+def extract_text_from_pdf(pdf_path):
+    print(f"Reading {pdf_path}...")
+    try:
+        reader = PdfReader(pdf_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        return text
+    except Exception as e:
+        print(f"Error reading PDF: {e}")
+        return None
+
+# --- 2. AI AGENT (GEMINI) ---
+def generate_resume_content(linkedin_text):
+    print(f"Sending data to {model.model_name} for processing...")
+    
+    prompt = f"""
+    You are an expert Resume Writer. Convert this LinkedIn profile text into a professional resume.
+    
+    RULES:
+    1. EXTRACT: Name, Location, LinkedIn Link, Email, Summary, Projects, Skills, Experience, Education.
+    2. ABOUT ME: Summarize the 'Summary' section into exactly 4 professional lines.
+    3. PROJECTS: Extract project details. If none exist, infer them from experience or leave empty.
+    4. ORDER: Return ONLY valid JSON.
+    
+    JSON STRUCTURE:
+    {{
+        "name": "Full Name",
+        "contact": "Location | LinkedIn URL | Email",
+        "about_me": "4 lines of professional summary.",
+        "projects": [
+            {{ "name": "Project Name", "details": "Brief description of technologies and outcome." }}
+        ],
+        "skills": ["Skill 1", "Skill 2", "Skill 3"],
+        "experience": [
+            {{ "title": "Job Title", "company": "Company", "dates": "Dates", "bullets": ["Action-oriented bullet 1", "Bullet 2"] }}
+        ],
+        "education": [
+            {{ "school": "School Name", "degree": "Degree", "year": "Year" }}
+        ]
+    }}
+
+    PROFILE TEXT:
+    {linkedin_text}
+    """
+
+    for attempt in range(3):
+        try:
+            response = model.generate_content(prompt)
+            clean_text = response.text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except exceptions.ResourceExhausted:
+            print("Rate limit hit. Waiting 10 seconds...")
+            time.sleep(10)
+        except Exception as e:
+            print(f"AI Generation Error: {e}")
+            return None
+    return None
+
+# --- 3. CREATE PDF (ReportLab) ---
+def create_resume_pdf(data, output_filename="resume.pdf"):
+    print(f"Generating PDF: {output_filename}...")
+    c = canvas.Canvas(output_filename, pagesize=letter)
+    width, height = letter
+    y = height - 50  # Start position
+
+    # Helper: Check for page break
+    def check_space(current_y, needed):
+        if current_y < needed:
+            c.showPage()
+            return height - 50
+        return current_y
+
+    # --- SECTION 1: HEADER (CENTERED) ---
+    c.setFont("Helvetica-Bold", 24)
+    name_width = c.stringWidth(data.get('name', 'Name'), "Helvetica-Bold", 24)
+    c.drawString((width - name_width) / 2, y, data.get('name', 'Name')) # Center Name
+    y -= 20
+
+    c.setFont("Helvetica", 10)
+    c.setFillColor(colors.black)
+    contact_text = data.get('contact', '')
+    contact_width = c.stringWidth(contact_text, "Helvetica", 10)
+    c.drawString((width - contact_width) / 2, y, contact_text) # Center Contact
+    y -= 40 # Add extra space after header
+
+    # Helper: Draw Section Title
+    def draw_section_title(title):
+        nonlocal y
+        y = check_space(y, 40)
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(colors.black)
+        c.drawString(50, y, title.upper())
+        c.line(50, y-5, width-50, y-5) # Horizontal line
+        y -= 20
+
+    # --- SECTION 2: ABOUT ME (4 Lines) ---
+    if data.get('about_me'):
+        draw_section_title("About Me")
+        c.setFont("Helvetica", 10)
+        lines = textwrap.wrap(data['about_me'], width=95)
+        for line in lines:
+            y = check_space(y, 15)
+            c.drawString(50, y, line)
+            y -= 15
+        y -= 15
+
+    # --- SECTION 3: PROJECTS ---
+    if data.get('projects'):
+        draw_section_title("Projects")
+        for proj in data['projects']:
+            y = check_space(y, 40)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, y, f"• {proj['name']}")
+            y -= 15
+            
+            c.setFont("Helvetica", 10)
+            details = textwrap.wrap(proj['details'], width=90)
+            for line in details:
+                y = check_space(y, 15)
+                c.drawString(65, y, line)
+                y -= 15
+            y -= 5
+        y -= 15
+
+    # --- SECTION 4: SKILLS ---
+    if data.get('skills'):
+        draw_section_title("Skills")
+        c.setFont("Helvetica", 10)
+        # Join skills with bullets
+        skills_text = " • ".join(data['skills'])
+        lines = textwrap.wrap(skills_text, width=95)
+        for line in lines:
+            y = check_space(y, 15)
+            c.drawString(50, y, line)
+            y -= 15
+        y -= 15
+
+    # --- SECTION 5: EXPERIENCE ---
+    if data.get('experience'):
+        draw_section_title("Experience")
+        for job in data['experience']:
+            y = check_space(y, 50)
+            
+            # Title & Company
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, y, f"{job['title']}")
+            c.setFont("Helvetica-Oblique", 10)
+            c.drawString(50, y-15, f"{job['company']}")
+            
+            # Date aligned right
+            c.drawRightString(width-50, y, job['dates'])
+            y -= 30
+            
+            # Bullets
+            c.setFont("Helvetica", 10)
+            for bullet in job['bullets']:
+                lines = textwrap.wrap(bullet, width=90)
+                for line in lines:
+                    y = check_space(y, 15)
+                    c.drawString(65, y, f"- {line}")
+                    y -= 15
+            y -= 10
+
+    # --- SECTION 6: EDUCATION ---
+    if data.get('education'):
+        draw_section_title("Education")
+        for edu in data['education']:
+            y = check_space(y, 40)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, y, edu['school'])
+            
+            c.setFont("Helvetica", 10)
+            c.drawRightString(width-50, y, edu['year'])
+            y -= 15
+            c.drawString(50, y, edu['degree'])
+            y -= 25
+
+    c.save()
+    print("Success! Resume saved.")
+
+# --- MAIN EXECUTION ---
+input_file = "profile.pdf"
+output_file = "resume.pdf"
+
+if os.path.exists(input_file):
+    raw_text = extract_text_from_pdf(input_file)
+    if raw_text:
+        resume_json = generate_resume_content(raw_text)
+        if resume_json:
+            create_resume_pdf(resume_json, output_file)
+            print(f"Download your file here: {output_file}")
+        else:
+             print("ERROR: AI response was empty or invalid.")
+else:
+    print(f"ERROR: Could not find '{input_file}'. Please upload it to Colab files.")

@@ -47,6 +47,7 @@ Before running the notebook, ensure you have the following:
 
 2. **Install Dependencies:**
    Run the first cell to install the required Python libraries.
+
    ```python
    !pip install -q google-generativeai pypdf reportlab
 
@@ -426,3 +427,4 @@ if os.path.exists(input_file):
              print("ERROR: AI response was empty or invalid.")
 else:
     print(f"ERROR: Could not find '{input_file}'. Please upload it to Colab files.")
+   ```
